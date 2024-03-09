@@ -1,29 +1,39 @@
 mod exchange;
 mod types;
 
+use env_logger;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
-
 use types::{Request, Side, Update};
-
 struct Bot {
     sender: mpsc::Sender<Request>,
     receiver: mpsc::Receiver<Update>, // Track bot state.
+    user_id: Option<u32>,
+    balance: u64,   // Amount in cash account
+    inventory: u64, // Num tokens currently held
 }
 
 impl Bot {
     pub fn init(sender: mpsc::Sender<Request>, receiver: mpsc::Receiver<Update>) -> Bot {
-        Self { sender, receiver }
+        Self {
+            sender,
+            receiver,
+            user_id: None,
+            balance: 0,
+            inventory: 0,
+        }
     }
 
-    fn user_id(&self) -> u32 {
-        // Hack.
-        0
+    async fn initialize_user_id(&self) {
+        let request = Request::CreateUser {
+            name: "bot".to_string(),
+        };
+        let _ = self.sender.send(request).await;
     }
 
     async fn place_order(&mut self, price: u64, size: u64, side: Side) {
         let r = Request::PlaceOrder {
-            user_id: self.user_id(),
+            user_id: self.user_id.unwrap(),
             price,
             size,
             side,
@@ -31,15 +41,21 @@ impl Bot {
         let _ = self.sender.send(r).await;
     }
 
-    async fn cancel_order(&mut self, order_id: u64) {
+    async fn cancel_order(&mut self, order_id: usize) {
         let r = Request::CancelOrder { order_id };
         let _ = self.sender.send(r).await;
     }
 
     fn handle_updates(&mut self) {
         while let Ok(update) = self.receiver.try_recv() {
-            // TODO:: Handle updates
-            println!("Update = {:?}", update);
+            match update {
+                Update::CreateUser { user_id } => self.user_id = Some(user_id),
+                Update::Order { order_id } => todo!(),
+                Update::Cancel { order_id } => todo!(),
+                Update::Deposit { amount } => todo!(),
+                Update::Noop => (),
+                Update::Trade { price, size } => todo!(),
+            }
         }
     }
 }
@@ -56,6 +72,8 @@ impl Bot {
  */
 #[tokio::main]
 async fn main() {
+    env_logger::init();
+
     let (tx_update, rx_update) = mpsc::channel::<Update>(1000);
     let (tx_request, rx_request) = mpsc::channel::<Request>(1000);
 
