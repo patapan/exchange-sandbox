@@ -10,3 +10,4 @@ tokio = { version = "1.34.0", features = ["full"] }
 rand = "0.8.5"
 log = "0.4.21"
 env_logger = "0.11.3"
+rust-bybit = "=0.2.0"
