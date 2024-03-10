@@ -1,5 +1,4 @@
 use tokio::sync::mpsc;
-
 use crate::types::*;
 use std::collections::{BTreeSet, HashMap};
 
@@ -29,12 +28,12 @@ struct Exchange {
 
 impl Exchange {
     // Return a vector of Orders
-    fn place_order(&mut self, user_id: u32, price: u64, size: u64, side: Side) -> Vec<Update> {
+    fn place_order(&mut self, user_name: String, price: u64, size: u64, side: Side) -> Vec<Update> {
         // Add order to DB
         let order_id = self.orders.len();
         self.orders.push(Order {
             order_id,
-            user_id,
+            user_name,
             price,
             size,
             side,
@@ -42,7 +41,7 @@ impl Exchange {
         });
 
         // Track updates for event propogation
-        let mut updates = Vec::new();
+        let mut updates = vec![Update::Order{ user_name, order_id, status: OrderStatus::Pending}];
 
         let mut order_size_remaining = size;
 
@@ -77,14 +76,15 @@ impl Exchange {
         // Remove matched orders from the book
         for matched_order_id in matched_orders {
             book_to_match.remove(&self.orders[matched_order_id]);
-            self.orders[matched_order_id as usize].status = OrderStatus::Filled;
+            self.orders[matched_order_id].status = OrderStatus::Filled;
+            updates.push(Update::Order{ user_name: self.orders[matched_order_id].user_name, order_id: matched_order_id, status: OrderStatus::Filled})
         }
 
         // If there's a remaining unmatched portion of the order, add it to the correct book
         if order_size_remaining > 0 {
             let remaining_order = Order {
                 order_id,
-                user_id,
+                user_name,
                 price,
                 size: order_size_remaining,
                 side,
@@ -101,16 +101,23 @@ impl Exchange {
             self.orders[order_id] = remaining_order;
         } else {
             self.orders[order_id].status = OrderStatus::Filled;
+            updates.push(Update::Order { user_name: user_name, order_id: order_id, status: OrderStatus::Filled });
         }
-
-        updates.push(Update::Order { order_id: order_id });
 
         return updates;
     }
 
-    fn deposit(&mut self, user: String, amount: u64) -> Vec<Update> {
-        *self.deposits.entry(user).or_insert(0) += amount;
-        return vec![Update::Deposit { amount }];
+    fn create_user(&mut self, user_name: String) -> Vec<Update> {
+        let user_already_exists = self.deposits.contains_key(&user_name);
+        if !user_already_exists {
+            self.deposits.insert(user_name, 0);
+        }
+        vec![Update::CreateUser { user_name, success: !user_already_exists }]
+    }
+
+    fn deposit(&mut self, user_name: String, amount: u64) -> Vec<Update> {
+        *self.deposits.entry(user_name).or_insert(0) += amount;
+        return vec![Update::Deposit { user_name, amount }];
     }
 
     fn cancel_order(&mut self, order_id: usize) -> Vec<Update> {
@@ -125,9 +132,10 @@ impl Exchange {
                 }
             }
             order.status = OrderStatus::Cancelled;
+            return vec![Update::Order { order_id, user_name: self.orders[order_id].user_name, status: OrderStatus::Cancelled }];
         }
-
-        return vec![Update::Cancel { order_id }];
+        // else unsuccessful cancel, Noop
+        return Vec::new();
     }
 }
 
@@ -146,11 +154,11 @@ pub async fn start(mut receiver: mpsc::Receiver<Request>, sender: mpsc::Sender<U
             Request::CreateUser { name } => exchange.deposit(name, 0),
             Request::Deposit { user, amount } => exchange.deposit(user, amount),
             Request::PlaceOrder {
-                user_id,
+                user_name,
                 price,
                 size,
                 side,
-            } => exchange.place_order(user_id, price, size, side),
+            } => exchange.place_order(user_name, price, size, side),
         };
 
         for x in response {

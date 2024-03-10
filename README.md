@@ -11,3 +11,9 @@ Todos:
 
 Assumptions
 - Assuming no overflows from size
+- Orders are recieved in the same order they are sent, and we do not need unique ids to associate request/responses
+
+
+#### Update mechanism of order flow
+- A pending order event will always fire before an order is able to be filled
+- Once an order is filled, a trade event occurs, followed by 2 order events with status filled

@@ -10,7 +10,7 @@ pub enum OrderStatus {
 #[derive(Debug, Clone)]
 pub struct Order {
     pub order_id: usize,
-    pub user_id: u32,
+    pub user_name: String,
     pub price: u64,
     pub size: u64,
     pub side: Side,
@@ -27,7 +27,7 @@ pub enum Side {
 
 impl PartialEq for Order {
     fn eq(&self, other: &Self) -> bool {
-        self.price == other.price && self.user_id == other.user_id
+        self.price == other.price && self.user_name == other.user_name
     }
 }
 
@@ -39,11 +39,11 @@ impl Ord for Order {
             Side::Bid => other
                 .price
                 .cmp(&self.price)
-                .then_with(|| self.user_id.cmp(&other.user_id)),
+                .then_with(|| self.user_name.cmp(&other.user_name)),
             Side::Ask => self
                 .price
                 .cmp(&other.price)
-                .then_with(|| self.user_id.cmp(&other.user_id)),
+                .then_with(|| self.user_name.cmp(&other.user_name)),
         }
     }
 }
@@ -59,7 +59,7 @@ impl PartialOrd for Order {
 #[derive(Debug)]
 pub enum Request {
     PlaceOrder {
-        user_id: u32,
+        user_name: String,
         price: u64,
         size: u64,
         side: Side,
@@ -76,12 +76,12 @@ pub enum Request {
     },
 }
 
+// Fire off events 
+
 #[derive(Debug)]
 pub enum Update {
-    Noop,
-    Order { order_id: usize },
-    Trade { price: u64, size: u64 },
-    Cancel { order_id: usize },
-    Deposit { amount: u64 },
-    CreateUser { user_id: u32 },
+    Order { user_name: String, order_id: usize, status: OrderStatus }, // Change to order state
+    Trade { price: u64, size: u64 }, // A trade has occurred
+    Deposit { user_name: String, amount: u64 },
+    CreateUser { user_name: String, success: bool}
 }

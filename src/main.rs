@@ -8,7 +8,7 @@ use types::{Request, Side, Update};
 struct Bot {
     sender: mpsc::Sender<Request>,
     receiver: mpsc::Receiver<Update>, // Track bot state.
-    user_id: Option<u32>,
+    user_name: String,
     balance: u64,   // Amount in cash account
     inventory: u64, // Num tokens currently held
 }
@@ -18,7 +18,7 @@ impl Bot {
         Self {
             sender,
             receiver,
-            user_id: None,
+            user_name: "",
             balance: 0,
             inventory: 0,
         }
@@ -31,9 +31,9 @@ impl Bot {
         let _ = self.sender.send(request).await;
     }
 
-    async fn place_order(&mut self, price: u64, size: u64, side: Side) {
+    async fn place_order(self, price: u64, size: u64, side: Side) {
         let r = Request::PlaceOrder {
-            user_id: self.user_id.unwrap(),
+            user_name: self.user_name,
             price,
             size,
             side,
@@ -48,13 +48,11 @@ impl Bot {
 
     fn handle_updates(&mut self) {
         while let Ok(update) = self.receiver.try_recv() {
-            match update {
-                Update::CreateUser { user_id } => self.user_id = Some(user_id),
-                Update::Order { order_id } => todo!(),
-                Update::Cancel { order_id } => todo!(),
-                Update::Deposit { amount } => todo!(),
-                Update::Noop => (),
-                Update::Trade { price, size } => todo!(),
+            match update {               
+                Update::CreateUser { user_name, success } => if success { self.user_name = user_name },
+                Update::Order { order_id, user_name, status } => if user_name == self.user_name { process_order(order_id, user_name, status) },
+                Update::Deposit { user_name, amount } => todo!(),
+                Update::Trade { price, size } => update_price(),
             }
         }
     }
