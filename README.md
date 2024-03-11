@@ -1,7 +1,3 @@
-#### Todos:
-- Update order functionality
-- Optimising cancels for amortised O(1)
-
 ### Assumptions:
 - Exchange only supports 1 pair
 - We have no int overflows
@@ -12,8 +8,9 @@
 #### Exchange
 
 For the exchange, I've chosen to use `BTreeSet` for the bids and asks.
-- The cancel order mechanism should be optimized with a HashMap, however I've left it as an O(lg N) for now.
-- The current exchange does not have an endpoint to propogate orderbook depth at various levels which I would like to add
+- The cancel order mechanism should be optimized with a HashMap, however I've left it as an O(lg N) operation for now.
+- The current sandboxed exchange does not have an endpoint to propogate the full orderbook to the bot which needs to be added
+- There should also be an `UpdateOrder` endpoint which should be pretty easy to add
 
 ##### Update mechanism of order flow
 - A pending order event will always fire before an order is able to be filled
