@@ -1,19 +1,23 @@
-Here is a generic sandbox for a mock exchange, with functionality for a basic bot and exchange with empty functions.
-
-Feel free to implement it and change it around as you desire to the architecture / design you desire.
-
-notes:
-I've chosen to assume we currently only have 1 pair in the books.
-
-## Todos:
+#### Todos:
 - Update order functionality
 - Optimising cancels for amortised O(1)
 
-Assumptions
-- Assuming no overflows from size
-- Orders are recieved in the same order they are sent, and we do not need unique ids to associate request/responses
+### Assumptions:
+- Exchange only supports 1 pair
+- We have no int overflows
+- Orders are received in the same order they are sent, and we do not need unique ids to associate request/responses
 
+### Design Choices 
 
-#### Update mechanism of order flow
+#### Exchange
+
+For the exchange, I've chosen to use `BTreeSet` for the bids and asks.
+- The cancel order mechanism should be optimized with a HashMap, however I've left it as an O(lg N) for now.
+
+##### Update mechanism of order flow
 - A pending order event will always fire before an order is able to be filled
 - Once an order is filled, a trade event occurs, followed by 2 order events with status filled
+
+#### Bot
+
+TBD

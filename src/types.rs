@@ -23,8 +23,6 @@ pub enum Side {
     Ask,
 }
 
-// Implement comparators for Order struct
-
 impl PartialEq for Order {
     fn eq(&self, other: &Self) -> bool {
         self.price == other.price && self.user_name == other.user_name
@@ -39,12 +37,12 @@ impl Ord for Order {
             Side::Bid => other
                 .price
                 .partial_cmp(&self.price)
-                .unwrap_or(Ordering::Less) // Handle NaN values if necessary
+                .unwrap_or(Ordering::Less)
                 .then_with(|| self.user_name.cmp(&other.user_name)),
             Side::Ask => self
                 .price
                 .partial_cmp(&other.price)
-                .unwrap_or(Ordering::Greater) // Handle NaN values if necessary
+                .unwrap_or(Ordering::Greater)
                 .then_with(|| self.user_name.cmp(&other.user_name)),
         }
     }
@@ -78,12 +76,24 @@ pub enum Request {
     },
 }
 
-// Fire off events 
-
 #[derive(Debug)]
 pub enum Update {
-    Order { user_name: String, order_id: usize, status: OrderStatus }, // Change to order state
-    Trade { price: f64, size: f64 }, // A trade has occurred
-    Deposit { user_name: String, amount: f64, success: bool },
-    CreateUser { user_name: String, success: bool}
+    Order {
+        user_name: String,
+        order_id: usize,
+        status: OrderStatus,
+    }, // Change to order state
+    Trade {
+        price: f64,
+        size: f64,
+    }, // A trade has occurred
+    Deposit {
+        user_name: String,
+        amount: f64,
+        success: bool,
+    },
+    CreateUser {
+        user_name: String,
+        success: bool,
+    },
 }

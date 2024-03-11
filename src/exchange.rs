@@ -1,16 +1,6 @@
-use tokio::sync::mpsc;
 use crate::types::*;
 use std::collections::{BTreeSet, HashMap};
-
-/*
- * TODO:
- * Implement functionality here to track the state required for an exchange
- * The sample code here is a starting point but functionality includes:
- * - Tracking order state correctly
- * - Simple order matching engine logic
- * - Tracking user state
- * Feel free to use any data structures you wish.
- */
+use tokio::sync::mpsc;
 
 struct Exchange {
     // Red-black tree representing the bids in the order book.
@@ -29,7 +19,6 @@ struct Exchange {
 impl Exchange {
     // Return a vector of Orders
     fn place_order(&mut self, user_name: String, price: f64, size: f64, side: Side) -> Vec<Update> {
-        // Add order to DB
         let order_id = self.orders.len();
         self.orders.push(Order {
             order_id,
@@ -41,7 +30,11 @@ impl Exchange {
         });
 
         // Track updates for event propogation
-        let mut updates = vec![Update::Order{ user_name: user_name.clone(), order_id, status: OrderStatus::Pending}];
+        let mut updates = vec![Update::Order {
+            user_name: user_name.clone(),
+            order_id,
+            status: OrderStatus::Pending,
+        }];
 
         let mut order_size_remaining = size;
 
@@ -77,7 +70,11 @@ impl Exchange {
         for matched_order_id in matched_orders {
             book_to_match.remove(&self.orders[matched_order_id]);
             self.orders[matched_order_id].status = OrderStatus::Filled;
-            updates.push(Update::Order{ user_name: self.orders[matched_order_id].user_name.clone(), order_id: matched_order_id, status: OrderStatus::Filled})
+            updates.push(Update::Order {
+                user_name: self.orders[matched_order_id].user_name.clone(),
+                order_id: matched_order_id,
+                status: OrderStatus::Filled,
+            })
         }
 
         // If there's a remaining unmatched portion of the order, add it to the correct book
@@ -101,7 +98,11 @@ impl Exchange {
             self.orders[order_id] = remaining_order;
         } else {
             self.orders[order_id].status = OrderStatus::Filled;
-            updates.push(Update::Order { user_name: user_name, order_id: order_id, status: OrderStatus::Filled });
+            updates.push(Update::Order {
+                user_name: user_name,
+                order_id: order_id,
+                status: OrderStatus::Filled,
+            });
         }
 
         return updates;
@@ -112,7 +113,10 @@ impl Exchange {
         if !user_already_exists {
             self.deposits.insert(user_name.clone(), 0.0);
         }
-        vec![Update::CreateUser { user_name: user_name, success: !user_already_exists }]
+        vec![Update::CreateUser {
+            user_name: user_name,
+            success: !user_already_exists,
+        }]
     }
 
     fn deposit(&mut self, user_name: String, amount: f64) -> Vec<Update> {
@@ -120,11 +124,14 @@ impl Exchange {
         if success {
             *self.deposits.entry(user_name.clone()).or_insert(0.0) += amount;
         }
-        vec![Update::Deposit { user_name, amount, success }]
+        vec![Update::Deposit {
+            user_name,
+            amount,
+            success,
+        }]
     }
 
     fn cancel_order(&mut self, order_id: usize) -> Vec<Update> {
-        // currently O(lg N) - Could also use a map to optimize further, however I will leave that as tech debt for now.
         if let Some(order) = self.orders.get_mut(order_id) {
             match order.side {
                 Side::Bid => {
@@ -135,7 +142,11 @@ impl Exchange {
                 }
             }
             order.status = OrderStatus::Cancelled;
-            return vec![Update::Order { order_id, user_name: self.orders[order_id].user_name.clone(), status: OrderStatus::Cancelled }];
+            return vec![Update::Order {
+                order_id,
+                user_name: self.orders[order_id].user_name.clone(),
+                status: OrderStatus::Cancelled,
+            }];
         }
         // else unsuccessful cancel, Noop
         return Vec::new();
@@ -154,7 +165,7 @@ pub async fn start(mut receiver: mpsc::Receiver<Request>, sender: mpsc::Sender<U
 
         let response = match r {
             Request::CancelOrder { order_id } => exchange.cancel_order(order_id),
-            Request::CreateUser { name } => exchange.deposit(name, 0.0),
+            Request::CreateUser { name } => exchange.create_user(name),
             Request::Deposit { user, amount } => exchange.deposit(user, amount),
             Request::PlaceOrder {
                 user_name,
