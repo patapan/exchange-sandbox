@@ -29,7 +29,7 @@ struct Bot {
     user_name: String,
     balance: f64,   // Amount in USDC
     inventory: f64, // Num tokens currently held
-    margin_bps: u16,
+    edge_bps: u16,
     bybit_data: Arc<Mutex<PriceData>>,
     sandbox_price: f64,
 }
@@ -46,7 +46,7 @@ impl Bot {
             user_name: "".to_string(),
             balance: 0.0,
             inventory: 0.0,
-            margin_bps: 10,
+            edge_bps: 5,
             bybit_data,
             sandbox_price: 0.0,
         }
