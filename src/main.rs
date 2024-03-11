@@ -132,7 +132,7 @@ impl Bot {
                         self.balance += amount
                     }
                 }
-                Update::Trade { price, size } => self.update_sandbox_data(price),
+                Update::Trade { price, size } => self.sandbox_price = price,
             }
         }
     }
@@ -141,10 +141,10 @@ impl Bot {
         todo!()
     }
 
-    fn update_sandbox_data(&mut self, price: f64) {
-        // get and update price
-        self.sandbox_price = price;
+    fn update_positions(&self) {
+        todo!()
     }
+
 }
 
 /**
