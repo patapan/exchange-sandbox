@@ -20,7 +20,7 @@ struct Exchange {
     pub asks: BTreeSet<Order>,
 
     // Map from user name to account balance
-    pub deposits: HashMap<String, u64>,
+    pub deposits: HashMap<String, f64>,
 
     // Record of all active and completed orders through the book
     pub orders: Vec<Order>,
@@ -28,7 +28,7 @@ struct Exchange {
 
 impl Exchange {
     // Return a vector of Orders
-    fn place_order(&mut self, user_name: String, price: u64, size: u64, side: Side) -> Vec<Update> {
+    fn place_order(&mut self, user_name: String, price: f64, size: f64, side: Side) -> Vec<Update> {
         // Add order to DB
         let order_id = self.orders.len();
         self.orders.push(Order {
@@ -60,14 +60,14 @@ impl Exchange {
                 Side::Ask => price <= order.price,
             };
 
-            if match_condition && order_size_remaining > 0 {
-                let trade_size = std::cmp::min(order_size_remaining, order.size);
+            if match_condition && order_size_remaining > 0.0 {
+                let trade_size = order_size_remaining.min(order.size);
                 order_size_remaining -= trade_size;
 
                 // Record trade event
                 updates.push(Update::Trade { price, size });
 
-                if order_size_remaining == 0 {
+                if order_size_remaining == 0.0 {
                     break;
                 }
             }
@@ -81,7 +81,7 @@ impl Exchange {
         }
 
         // If there's a remaining unmatched portion of the order, add it to the correct book
-        if order_size_remaining > 0 {
+        if order_size_remaining > 0.0 {
             let remaining_order = Order {
                 order_id,
                 user_name,
@@ -110,14 +110,17 @@ impl Exchange {
     fn create_user(&mut self, user_name: String) -> Vec<Update> {
         let user_already_exists = self.deposits.contains_key(&user_name);
         if !user_already_exists {
-            self.deposits.insert(user_name.clone(), 0);
+            self.deposits.insert(user_name.clone(), 0.0);
         }
         vec![Update::CreateUser { user_name: user_name, success: !user_already_exists }]
     }
 
-    fn deposit(&mut self, user_name: String, amount: u64) -> Vec<Update> {
-        *self.deposits.entry(user_name.clone()).or_insert(0) += amount;
-        return vec![Update::Deposit { user_name: user_name, amount }];
+    fn deposit(&mut self, user_name: String, amount: f64) -> Vec<Update> {
+        let success = amount >= 0.0;
+        if success {
+            *self.deposits.entry(user_name.clone()).or_insert(0.0) += amount;
+        }
+        vec![Update::Deposit { user_name, amount, success }]
     }
 
     fn cancel_order(&mut self, order_id: usize) -> Vec<Update> {
@@ -151,7 +154,7 @@ pub async fn start(mut receiver: mpsc::Receiver<Request>, sender: mpsc::Sender<U
 
         let response = match r {
             Request::CancelOrder { order_id } => exchange.cancel_order(order_id),
-            Request::CreateUser { name } => exchange.deposit(name, 0),
+            Request::CreateUser { name } => exchange.deposit(name, 0.0),
             Request::Deposit { user, amount } => exchange.deposit(user, amount),
             Request::PlaceOrder {
                 user_name,

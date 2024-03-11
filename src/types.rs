@@ -11,8 +11,8 @@ pub enum OrderStatus {
 pub struct Order {
     pub order_id: usize,
     pub user_name: String,
-    pub price: u64,
-    pub size: u64,
+    pub price: f64,
+    pub size: f64,
     pub side: Side,
     pub status: OrderStatus,
 }
@@ -38,11 +38,13 @@ impl Ord for Order {
         match self.side {
             Side::Bid => other
                 .price
-                .cmp(&self.price)
+                .partial_cmp(&self.price)
+                .unwrap_or(Ordering::Less) // Handle NaN values if necessary
                 .then_with(|| self.user_name.cmp(&other.user_name)),
             Side::Ask => self
                 .price
-                .cmp(&other.price)
+                .partial_cmp(&other.price)
+                .unwrap_or(Ordering::Greater) // Handle NaN values if necessary
                 .then_with(|| self.user_name.cmp(&other.user_name)),
         }
     }
@@ -60,8 +62,8 @@ impl PartialOrd for Order {
 pub enum Request {
     PlaceOrder {
         user_name: String,
-        price: u64,
-        size: u64,
+        price: f64,
+        size: f64,
         side: Side,
     },
     CancelOrder {
@@ -69,7 +71,7 @@ pub enum Request {
     },
     Deposit {
         user: String,
-        amount: u64,
+        amount: f64,
     },
     CreateUser {
         name: String,
@@ -81,7 +83,7 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Update {
     Order { user_name: String, order_id: usize, status: OrderStatus }, // Change to order state
-    Trade { price: u64, size: u64 }, // A trade has occurred
-    Deposit { user_name: String, amount: u64 },
+    Trade { price: f64, size: f64 }, // A trade has occurred
+    Deposit { user_name: String, amount: f64, success: bool },
     CreateUser { user_name: String, success: bool}
 }

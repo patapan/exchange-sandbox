@@ -5,7 +5,7 @@ Feel free to implement it and change it around as you desire to the architecture
 notes:
 I've chosen to assume we currently only have 1 pair in the books.
 
-Todos:
+## Todos:
 - Update order functionality
 - Optimising cancels for amortised O(1)
 

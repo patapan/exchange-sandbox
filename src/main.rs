@@ -1,7 +1,7 @@
 mod exchange;
 mod types;
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
 use env_logger;
@@ -28,31 +28,26 @@ impl PriceData {
 
 struct Bot {
     sender: mpsc::Sender<Request>,
-    receiver: mpsc::Receiver<Update>, // Track bot state.
+    receiver: mpsc::Receiver<Update>,
     user_name: String,
-    balance: u64,   // Amount in cash account
-    inventory: u64, // Num tokens currently held
+    balance: f64,   // Amount in USDC
+    inventory: f64, // Num tokens currently held
     margin_bps: u16,
-
-    // orders 
-    bids: BTreeSet<Order>,
-    asks: BTreeSet<Order>,
-
-    price_data: Arc<Mutex<PriceData>>,
+    bybit_data: Arc<Mutex<PriceData>>,
+    sandbox_price: f64,
 }
 
 impl Bot {
-    pub fn init(sender: mpsc::Sender<Request>, receiver: mpsc::Receiver<Update>, price_data: Arc<Mutex<PriceData>>) -> Bot {
+    pub fn init(sender: mpsc::Sender<Request>, receiver: mpsc::Receiver<Update>, bybit_data: Arc<Mutex<PriceData>>) -> Bot {
         Self {
             sender,
             receiver,
             user_name: "".to_string(),
-            balance: 0,
-            inventory: 0,
+            balance: 0.0,
+            inventory: 0.0,
             margin_bps: 10,
-            bids: BTreeSet::new(),
-            asks: BTreeSet::new(),
-            price_data
+            bybit_data,
+            sandbox_price: 0.0,
         }
     }
 
@@ -95,7 +90,7 @@ impl Bot {
         let _ = self.sender.send(request).await;
     }
 
-    async fn place_order(&mut self, price: u64, size: u64, side: Side) {
+    async fn place_order(&mut self, price: f64, size: f64, side: Side) {
         let r = Request::PlaceOrder {
             user_name: self.user_name.clone(),
             price,
@@ -115,22 +110,20 @@ impl Bot {
             match update {               
                 Update::CreateUser { user_name, success } => if success { self.user_name = user_name },
                 Update::Order { order_id, user_name, status } => if user_name == self.user_name { self.process_order(order_id, user_name, status) },
-                Update::Deposit { user_name, amount } => todo!(),
-                Update::Trade { price, size } => self.update_price_data(),
+                Update::Deposit { user_name, amount, success } => if user_name == self.user_name && success { self.balance += amount},
+                Update::Trade { price, size } => self.update_sandbox_data(price),
             }
         }
     }
 
+    // 
     fn process_order(&self, order_id: usize, user_name: String, status: OrderStatus) {
-        
+        todo!()
     }
 
-    fn update_price_data(&self) {
-        
-    }
-
-    fn get_exchange_price(self) {
+    fn update_sandbox_data(&mut self, price: f64) {
         // get and update price
+        self.sandbox_price = price;
     }
 }
 
@@ -158,13 +151,13 @@ async fn main() {
     let bot = Bot::init(tx_request, rx_update, Arc::clone(&price_data));
 
     bot.start_bybit_poll(Arc::clone(&price_data)).await;
-
+    bot.initialize_user_id();
 
     loop {
-        // bot.place_order(100, 20, Side::Bid).await;
         // bot.handle_updates();
+        // bot.update_positions();
 
-        println!("Bid: {:?}, Ask:",  bot.price_data.lock().unwrap().bid);
+        // println!("Bid: {:?}, Ask:",  bot.price_data.lock().unwrap().bid);
         sleep(Duration::from_millis(1000)).await;
     }
 }
