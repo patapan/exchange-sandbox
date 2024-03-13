@@ -20,6 +20,11 @@ impl Exchange {
     // Return a vector of Orders
     fn place_order(&mut self, user_name: String, price: f64, size: f64, side: Side) -> Vec<Update> {
         let order_id = self.orders.len();
+        if *self.deposits.entry(user_name.clone()).or_insert(0.0) < price * size {
+            // User doesn't have enough money to place an order
+            return vec![Update::Order{user_name: user_name.clone(), order_id, status: OrderStatus::Failed}];
+        }
+
         self.orders.push(Order {
             order_id,
             user_name: user_name.clone(),

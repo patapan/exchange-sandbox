@@ -5,6 +5,7 @@ pub enum OrderStatus {
     Pending,
     Filled,
     Cancelled,
+    Failed
 }
 
 #[derive(Debug, Clone)]
