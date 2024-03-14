@@ -63,7 +63,7 @@ struct Bot {
     sandbox_price: f64,
 
     // Handle orders
-    stale_orders: HashSet<usize>, // Orders are stale if they are too old, failed, or cancelled
+    completed_orders: HashSet<usize>, // Orders are completed if they are filled, failed, or cancelled
     active_orders: BinaryHeap<TimestampedOrder>, // orders sorted by timestamp
 }
 
@@ -82,7 +82,7 @@ impl Bot {
             edge_bps: 5.0,
             bybit_data,
             sandbox_price: 0.0,
-            stale_orders: HashSet::new(),
+            completed_orders: HashSet::new(),
             active_orders: BinaryHeap::new(),
         }
     }
@@ -126,16 +126,6 @@ impl Bot {
         let _ = self.sender.send(request).await;
     }
 
-    async fn place_order(&mut self, price: f64, size: f64, side: Side) {
-        let r = Request::PlaceOrder {
-            user_name: self.user_name.clone(),
-            price,
-            size,
-            side,
-        };
-        let _ = self.sender.send(r).await;
-    }
-
     async fn cancel_order(&mut self, order_id: usize) {
         let r = Request::CancelOrder { order_id };
         let _ = self.sender.send(r).await;
@@ -152,7 +142,7 @@ impl Bot {
                 Update::Order { order } => {
                     if order.user_name == self.user_name {
                         // We only really care about our own orders (atm)
-                        self.process_order(order)
+                        self.process_order(order);
                     }
                 }
                 Update::Deposit {
@@ -177,16 +167,16 @@ impl Bot {
                 self.active_orders.push(TimestampedOrder { order });
             }
             OrderStatus::Filled => {
-                self.stale_orders.insert(order.order_id);
+                self.completed_orders.insert(order.order_id);
             }
             OrderStatus::Cancelled => {
                 // update balance with volume
                 self.balance += order.price * order.size;
-                self.stale_orders.insert(order.order_id);
+                self.completed_orders.insert(order.order_id);
             }
             OrderStatus::Failed => {
                 // Failed means it could not be converted to pending/filled
-                self.stale_orders.insert(order.order_id);
+                self.completed_orders.insert(order.order_id);
             }
         }
     }
@@ -207,7 +197,7 @@ impl Bot {
         let ask_size = ((self.balance / ask_price) * 0.01).ceil(); // use 1% of existing balance on this trade
 
         // open asks if we have enough inventory
-        if self.inventory > ask_size {
+        if self.inventory >= ask_size {
             let _ = self.sender.send(Request::PlaceOrder {
                 user_name: self.user_name.clone(),
                 price: ask_price,
@@ -216,12 +206,17 @@ impl Bot {
             }).await;
         }
 
-        // close expiring orders
-        while self
-            .stale_orders
-            .contains(&self.active_orders.peek().unwrap().order.order_id)
-        {
-            self.active_orders.pop();
+        loop {
+            // cancel any pending orders older than 60 seconds
+            if self.active_orders.peek().unwrap().order.created < SystemTime::now() - Duration::new(10,0) {
+                self.cancel_order(self.active_orders.peek().unwrap().order.order_id).await;
+                self.active_orders.pop();
+            // pop off any old orders (filled, cancelled, etc)
+            } else if self.completed_orders.contains(&self.active_orders.peek().unwrap().order.order_id) {
+                self.active_orders.pop();
+            } else {
+                break;
+            }
         }
     }
 }
@@ -254,7 +249,7 @@ async fn main() {
 
     loop {
         bot.handle_updates();
-        bot.update_positions();
+        bot.update_positions().await;
 
         // println!("Bid: {:?}, Ask:",  bot.price_data.lock().unwrap().bid);
         sleep(Duration::from_millis(1000)).await;
