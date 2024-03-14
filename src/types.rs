@@ -1,11 +1,11 @@
-use std::cmp::Ordering;
+use std::{cmp::Ordering, time::SystemTime};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum OrderStatus {
-    Pending,
+    Pending, // Sitting in order book
     Filled,
     Cancelled,
-    Failed
+    Failed,
 }
 
 #[derive(Debug, Clone)]
@@ -16,6 +16,7 @@ pub struct Order {
     pub size: f64,
     pub side: Side,
     pub status: OrderStatus,
+    pub created: SystemTime,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -80,10 +81,8 @@ pub enum Request {
 #[derive(Debug)]
 pub enum Update {
     Order {
-        user_name: String,
-        order_id: usize,
-        status: OrderStatus,
-    }, // Change to order state
+        order: Order,
+    }, // Propogate change to order state
     Trade {
         price: f64,
         size: f64,

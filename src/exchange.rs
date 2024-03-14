@@ -1,6 +1,17 @@
 use crate::types::*;
-use std::collections::{BTreeSet, HashMap};
+use std::{
+    borrow::BorrowMut,
+    collections::{BTreeSet, HashMap},
+    time::SystemTime,
+};
 use tokio::sync::mpsc;
+
+struct User {
+    // balance
+    // free collateral
+    // active_positions
+    //
+}
 
 struct Exchange {
     // Red-black tree representing the bids in the order book.
@@ -19,11 +30,8 @@ struct Exchange {
 impl Exchange {
     // Return a vector of Orders
     fn place_order(&mut self, user_name: String, price: f64, size: f64, side: Side) -> Vec<Update> {
+        let timestamp = SystemTime::now();
         let order_id = self.orders.len();
-        if *self.deposits.entry(user_name.clone()).or_insert(0.0) < price * size {
-            // User doesn't have enough money to place an order
-            return vec![Update::Order{user_name: user_name.clone(), order_id, status: OrderStatus::Failed}];
-        }
 
         self.orders.push(Order {
             order_id,
@@ -32,14 +40,19 @@ impl Exchange {
             size,
             side,
             status: OrderStatus::Pending,
+            created: timestamp,
         });
 
         // Track updates for event propogation
         let mut updates = vec![Update::Order {
-            user_name: user_name.clone(),
-            order_id,
-            status: OrderStatus::Pending,
+            order: self.orders[order_id].clone(),
         }];
+
+        if *self.deposits.entry(user_name.clone()).or_insert(0.0) < price * size {
+            // User doesn't have enough money to place an order
+            self.orders[order_id].status = OrderStatus::Failed;
+            return updates;
+        }
 
         let mut order_size_remaining = size;
 
@@ -76,37 +89,26 @@ impl Exchange {
             book_to_match.remove(&self.orders[matched_order_id]);
             self.orders[matched_order_id].status = OrderStatus::Filled;
             updates.push(Update::Order {
-                user_name: self.orders[matched_order_id].user_name.clone(),
-                order_id: matched_order_id,
-                status: OrderStatus::Filled,
-            })
+                order: self.orders[matched_order_id].clone(),
+            });
         }
 
         // If there's a remaining unmatched portion of the order, add it to the correct book
         if order_size_remaining > 0.0 {
-            let remaining_order = Order {
-                order_id,
-                user_name,
-                price,
-                size: order_size_remaining,
-                side,
-                status: OrderStatus::Pending,
-            };
+            self.orders[order_id].size = order_size_remaining;
+
             match side {
                 Side::Bid => {
-                    self.bids.insert(remaining_order.clone());
+                    self.bids.insert(self.orders[order_id].clone());
                 }
                 Side::Ask => {
-                    self.asks.insert(remaining_order.clone());
+                    self.asks.insert(self.orders[order_id].clone());
                 }
             }
-            self.orders[order_id] = remaining_order;
         } else {
             self.orders[order_id].status = OrderStatus::Filled;
             updates.push(Update::Order {
-                user_name: user_name,
-                order_id: order_id,
-                status: OrderStatus::Filled,
+                order: self.orders[order_id].clone(),
             });
         }
 
@@ -148,14 +150,18 @@ impl Exchange {
             }
             order.status = OrderStatus::Cancelled;
             return vec![Update::Order {
-                order_id,
-                user_name: self.orders[order_id].user_name.clone(),
-                status: OrderStatus::Cancelled,
+                order: order.clone(),
             }];
         }
         // else unsuccessful cancel, Noop
         return Vec::new();
     }
+
+    // buying power = free collateral * (price / margin)
+    // fn buying_power(margin_bps: i16, )
+
+    // margin_check = balance + unrealised_pnl - margin * positions > 0
+    // fn margin_check
 }
 
 pub async fn start(mut receiver: mpsc::Receiver<Request>, sender: mpsc::Sender<Update>) {
