@@ -1,31 +1,24 @@
 mod exchange;
 mod types;
 
-use core::time;
-use std::borrow::BorrowMut;
 use std::cmp::Ordering;
-use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
+use std::collections::{BinaryHeap, HashSet};
 use std::sync::{Arc, Mutex};
 
 use bybit::ws::response::SpotPublicResponse;
 use bybit::ws::spot;
 use bybit::WebSocketApiClient;
 use env_logger;
-use std::collections::LinkedList;
 use std::time::SystemTime;
 use tokio::sync::mpsc;
 use tokio::time::{sleep, Duration};
 use types::{Order, OrderStatus, Request, Side, Update};
 
+const EXPIRY_TIME: u64 = 30; // 30 second timeout on orders
+
 struct PriceData {
     bid: f64,
     ask: f64,
-}
-
-impl PriceData {
-    pub fn init() -> PriceData {
-        Self { bid: 0.0, ask: 0.0 }
-    }
 }
 
 struct TimestampedOrder {
@@ -126,6 +119,14 @@ impl Bot {
         let _ = self.sender.send(request).await;
     }
 
+    async fn deposit(&self, amount: f64) {
+        let request = Request::Deposit {
+            user: self.user_name.clone(),
+            amount,
+        };
+        let _ = self.sender.send(request).await;
+    }
+
     async fn cancel_order(&mut self, order_id: usize) {
         let r = Request::CancelOrder { order_id };
         let _ = self.sender.send(r).await;
@@ -163,10 +164,12 @@ impl Bot {
         // add pending orders to list
         match order.status {
             OrderStatus::Pending => {
-                // we've hit the book, record order
+                // record order in book
                 self.active_orders.push(TimestampedOrder { order });
             }
             OrderStatus::Filled => {
+                // update inventory
+                self.inventory += order.size;
                 self.completed_orders.insert(order.order_id);
             }
             OrderStatus::Cancelled => {
@@ -182,37 +185,52 @@ impl Bot {
     }
 
     async fn update_positions(&mut self) {
-        // open new bid position and record it.
+        // open new bid position if we have enough balance, and record it.
+
         let bid_price = self.bybit_data.lock().unwrap().bid * (1.0 + self.edge_bps);
         let bid_size = ((self.balance / bid_price) * 0.01).ceil(); // use 1% of existing balance on this trade
 
-        let _ = self.sender.send(Request::PlaceOrder {
-            user_name: self.user_name.clone(),
-            price: bid_price,
-            size: bid_size,
-            side: Side::Bid,
-        }).await;
+        if self.balance > bid_price * bid_size {
+            let _ = self
+            .sender
+            .send(Request::PlaceOrder {
+                user_name: self.user_name.clone(),
+                price: bid_price,
+                size: bid_size,
+                side: Side::Bid,
+            })
+            .await;
+        }
 
         let ask_price = self.bybit_data.lock().unwrap().ask * (1.0 + self.edge_bps);
         let ask_size = ((self.balance / ask_price) * 0.01).ceil(); // use 1% of existing balance on this trade
 
         // open asks if we have enough inventory
         if self.inventory >= ask_size {
-            let _ = self.sender.send(Request::PlaceOrder {
-                user_name: self.user_name.clone(),
-                price: ask_price,
-                size: ask_size,
-                side: Side::Ask,
-            }).await;
+            let _ = self
+                .sender
+                .send(Request::PlaceOrder {
+                    user_name: self.user_name.clone(),
+                    price: ask_price,
+                    size: ask_size,
+                    side: Side::Ask,
+                })
+                .await;
         }
 
         loop {
-            // cancel any pending orders older than 60 seconds
-            if self.active_orders.peek().unwrap().order.created < SystemTime::now() - Duration::new(10,0) {
-                self.cancel_order(self.active_orders.peek().unwrap().order.order_id).await;
+            // cancel any pending orders older than EXPIRY_TIME seconds
+            if self.active_orders.peek().unwrap().order.created
+                < SystemTime::now() - Duration::new(EXPIRY_TIME, 0)
+            {
+                self.cancel_order(self.active_orders.peek().unwrap().order.order_id)
+                    .await;
                 self.active_orders.pop();
-            // pop off any old orders (filled, cancelled, etc)
-            } else if self.completed_orders.contains(&self.active_orders.peek().unwrap().order.order_id) {
+            // pop off any non-active orders (filled, cancelled, etc)
+            } else if self
+                .completed_orders
+                .contains(&self.active_orders.peek().unwrap().order.order_id)
+            {
                 self.active_orders.pop();
             } else {
                 break;
@@ -246,12 +264,13 @@ async fn main() {
 
     bot.start_bybit_poll(Arc::clone(&price_data)).await;
     bot.initialize_user_id().await;
+    bot.deposit(1000.0).await;
 
     loop {
         bot.handle_updates();
         bot.update_positions().await;
 
         // println!("Bid: {:?}, Ask:",  bot.price_data.lock().unwrap().bid);
-        sleep(Duration::from_millis(1000)).await;
+        sleep(Duration::from_millis(5000)).await;
     }
 }
